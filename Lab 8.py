@@ -87,3 +87,7 @@ system.add_emergency(emergency1)
 system.process_emergencies()
 
 print(f"Average travel time: {system.calculate_average_travel_time()}")
+
+
+# PLEASE REMOVE THIS BEFORE SUBMITTING THE LAB THIS IS ONLY A PROMPT REFERENCE SO IF WE WANT TO REGENERATE THIS ON A DIFFERENT SITE WE DO NOT NEED TO WRITE OUT THE ENTIRE THING
+# https://www.blackbox.ai/share/2b92a2b0-a0a2-4ee6-8dc0-fed667bf6865
