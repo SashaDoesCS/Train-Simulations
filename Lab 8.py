@@ -1,27 +1,56 @@
 import heapq
+stations = ['A', 'B', 'C', 'D']
 
 class Passenger:
     def __init__(self, start_station, destination_station, request_time):
         self.start_station = start_station
         self.destination_station = destination_station
         self.request_time = request_time
-        self.priority = self.calculate_initial_priority()
+        self.priority = self.calculate_priority()
 
-    def calculate_initial_priority(self):
-        # Calculate initial priority based on distance between start station and destination
-        stations = ['A', 'B', 'C', 'D']
+    #The priority is based on distance, so the shorter the distance, the higher the priority
+    #This is the initial priority, so from the start station to the individual passenger's destination
+    def calculate_priority(self):
         start_index = stations.index(self.start_station)
         dest_index = stations.index(self.destination_station)
         distance = abs(start_index - dest_index)
         return distance
 
+    #The priority is calculated in the same way as above
+    #This is based on the distance between the current station and the individual passenger's destination
     def recalculate_priority(self, current_station):
-        # Recalculate priority based on current station and destination
-        stations = ['A', 'B', 'C', 'D']
         current_index = stations.index(current_station)
         dest_index = stations.index(self.destination_station)
         distance = abs(current_index - dest_index)
         self.priority = distance
+
+    #heapq will sort based on priority
+    def __lt__(self, other):
+        return self.priority < other.priority
+
+class PassengerQueue:
+    def __init__(self):
+        self.queue = []
+        self.current_station = 'A'
+
+    def add_passenger(self, passenger):
+        heapq.heappush(self.queue, passenger)
+
+    def update_priority(self):
+        passengers = []
+        while self.queue:
+            passenger = heapq.heappop(self.queue)
+            passenger.recalculate_priority(self.current_station)
+            passengers.append(passenger)
+
+        for passenger in passengers:
+            heapq.heappush(self.queue, passenger)
+
+    def add_next_passenger(self):
+        if self.queue:
+            return heapq.heappop(self.queue)
+        return None
+    #Elizabeth's code above, remove this line before submission, feel free to add and edit as necessary
 
 class Emergency:
     def __init__(self, request_time):
