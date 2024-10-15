@@ -1,131 +1,122 @@
 import heapq
+import random
 
 stations = ['A', 'B', 'C', 'D']
+station_time = 10  # Each station is 10 minutes apart
 
 class Passenger:
-    def __init__(self, start_station, destination_station, request_time):
+    def __init__(self, start_station, destination_station, request_time, is_emergency=False):
         self.start_station = start_station
         self.destination_station = destination_station
         self.request_time = request_time
+        self.is_emergency = is_emergency
+        self.boarded = False
+        self.board_time = None
         self.priority = self.calculate_priority()
+        self.total_time_on_train = 0  # To track the total time spent on the train
 
     def calculate_priority(self):
         start_index = stations.index(self.start_station)
         dest_index = stations.index(self.destination_station)
         distance = abs(start_index - dest_index)
-        return distance
+        return 0 if self.is_emergency else distance  # Emergency passengers get the highest priority (0)
 
     def recalculate_priority(self, current_station):
         current_index = stations.index(current_station)
         dest_index = stations.index(self.destination_station)
         distance = abs(current_index - dest_index)
-        self.priority = distance
+        self.priority = 0 if self.is_emergency else distance
 
     def __lt__(self, other):
         return self.priority < other.priority
 
-class PassengerQueue:
-    def __init__(self):
-        self.queue = []
-        self.current_station = 'A'
-
-    def add_passenger(self, passenger):
-        heapq.heappush(self.queue, passenger)
-
-    def update_priority(self):
-        passengers = []
-        while self.queue:
-            passenger = heapq.heappop(self.queue)
-            passenger.recalculate_priority(self.current_station)
-            passengers.append(passenger)
-
-        for passenger in passengers:
-            heapq.heappush(self.queue, passenger)
-
-    def add_next_passenger(self):
-        if self.queue:
-            return heapq.heappop(self.queue)
-        return None
-
-class Emergency:
-    def __init__(self, station, request_time, description):
-        self.station = station
-        self.request_time = request_time
-        self.description = description
-
 class TrainControlSystem:
     def __init__(self):
         self.passengers = []
-        self.emergencies = []
         self.current_station = 'A'
+        self.current_time = 0  # Time starts at 0 minutes
+        self.total_travel_time = 0  # Track total travel time globally
+        self.waiting_passengers = []  # Passengers waiting at stations
 
     def add_passenger(self, passenger):
-        heapq.heappush(self.passengers, (passenger.priority, passenger))
-
-    def add_emergency(self, emergency):
-        self.emergencies.append(emergency)
+        self.waiting_passengers.append(passenger)  # Passengers wait at their stations initially
 
     def process_passengers(self):
-        # Process emergencies first
-        if self.emergencies:
-            self.process_emergencies()
-
-        # Process passengers
         if self.passengers:
             priority, passenger = heapq.heappop(self.passengers)
-            print(f"Processing passenger from {passenger.start_station} to {passenger.destination_station}")
+            print(f"Processing passenger from {passenger.start_station} to {passenger.destination_station} at {self.current_time} minutes")
             if passenger.destination_station == self.current_station:
-                print(f"Passenger arrived at destination {passenger.destination_station}")
+                print(f"Passenger arrived at destination {passenger.destination_station} at {self.current_time} minutes")
+                travel_time = self.current_time - passenger.board_time  # Time spent on train
+                self.total_travel_time += travel_time  # Add passenger's travel time to the global total
             else:
-                # Recalculate priority and re-add if passenger hasn't reached destination
                 passenger.recalculate_priority(self.current_station)
                 heapq.heappush(self.passengers, (passenger.priority, passenger))
 
-    def process_emergencies(self):
-        while self.emergencies:
-            emergency = self.emergencies.pop(0)  # Handle the first emergency in the list
-            print(f"Handling emergency at station {emergency.station} at time {emergency.request_time}: {emergency.description}")
-            self.move_train(emergency.station)  # Move the train to the emergency location immediately
-
     def move_train(self, new_station):
+        travel_time = station_time * abs(stations.index(self.current_station) - stations.index(new_station))
+        self.current_time += travel_time
+        print(f"Train moved to {new_station} at {self.current_time} minutes")
+
+        # Update the time for each passenger currently on the train
+        for priority, passenger in self.passengers:
+            passenger.total_time_on_train += station_time  # Add 10 minutes for each station passed
+
         self.current_station = new_station
-        self.visualize_train_position()  # Visualize the train at the new station
-        print(f"Train moved to {new_station}")
+        self.board_passengers()  # Passengers at this station can now board
         self.process_passengers()
 
-    def visualize_train_position(self):
-        # Create a simple text-based visualization of the train and stations
-        train_position = stations.index(self.current_station)
-        station_display = ["[T]" if i == train_position else f"[{station}]" for i, station in enumerate(stations)]
-        print(" ".join(station_display))
+    def board_passengers(self):
+        for passenger in self.waiting_passengers[:]:
+            if passenger.start_station == self.current_station:
+                print(f"Passenger from {passenger.start_station} to {passenger.destination_station} boarded at {self.current_time} minutes")
+                passenger.board_time = self.current_time  # Track when the passenger boards the train
+                passenger.boarded = True
+                heapq.heappush(self.passengers, (passenger.priority, passenger))
+                self.waiting_passengers.remove(passenger)
 
-    def calculate_average_travel_time(self):
-        total_time = 0
-        for _, passenger in self.passengers:
-            total_time += passenger.request_time
-        if self.passengers:
-            return total_time / len(self.passengers)
-        return 0
+    def run_simulation(self, num_runs=10):
+        total_passengers = 0
+
+        for run in range(num_runs):
+            print(f"--- Simulation Run {run + 1} ---")
+            self.current_station = 'A'
+            self.current_time = 0
+            self.passengers = []
+            self.waiting_passengers = []
+            self.total_travel_time = 0  # Reset total travel time for this run
+
+            # Generate random passengers for each run
+            num_passengers = random.randint(3, 5)  # Random number of passengers per run
+            total_passengers += num_passengers
+            for _ in range(num_passengers):
+                start_station = random.choice(stations)
+                dest_station = random.choice(stations)
+                while dest_station == start_station:
+                    dest_station = random.choice(stations)  # Ensure start != destination
+
+                request_time = random.randint(1, 50)
+                is_emergency = random.choice([False, True])  # Randomly decide if it's an emergency
+                passenger = Passenger(start_station, dest_station, request_time, is_emergency)
+                self.add_passenger(passenger)
+
+            # Simulate train movement through all stations
+            for station in stations:
+                self.move_train(station)
+
+            # After simulation, sum up total travel time for passengers still on board
+            for priority, passenger in self.passengers:
+                self.total_travel_time += passenger.total_time_on_train  # Include remaining passengers' time
+
+            print(f"Total travel time for this run: {self.total_travel_time} minutes\n")
+
+        # Calculate the average time spent per passenger
+        average_time_spent = self.total_travel_time / total_passengers if total_passengers > 0 else 0
+        return average_time_spent
 
 # Example usage
 system = TrainControlSystem()
 
-passenger1 = Passenger('A', 'C', 10)
-passenger2 = Passenger('B', 'D', 20)
-passenger3 = Passenger('C', 'A', 30)
-
-system.add_passenger(passenger1)
-system.add_passenger(passenger2)
-system.add_passenger(passenger3)
-
-# Emergency example with a description
-emergency1 = Emergency('D', 40, "Fire reported in station D")
-system.add_emergency(emergency1)
-
-# Visualize the train moving through stations
-system.move_train('B')
-system.move_train('C')
-system.process_emergencies()  # Handle emergencies first
-system.move_train('D')  # Continue with regular passengers
-
-print(f"Average travel time: {system.calculate_average_travel_time()}")
+# Run 10 simulation runs
+average_time = system.run_simulation(10)
+print(f"\nAverage time spent on train per passenger: {average_time:.2f} minutes")
