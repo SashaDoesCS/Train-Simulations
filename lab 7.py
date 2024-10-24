@@ -232,6 +232,9 @@ class TrainControlSystem:
             print(f"\n{'=' * 20} Run {run + 1} {'=' * 20}")
             self.__init__()
 
+            # Generate passengers at the first station before the first stop
+            self.generate_passengers_at_station(self.current_station)
+
             # Run for exactly 20 stops
             while self.stops_made < 20:
                 if not self.move_train():
@@ -267,9 +270,6 @@ if __name__ == "__main__":
     system = TrainControlSystem()
     total_time, total_emergency, total_regular = system.run_simulation(num_runs=10)
     print("\n=== Overall Simulation Results ===")
+    print(f"Total time for all runs: {total_time} minutes")
     print(f"Total emergency passengers served: {total_emergency}")
     print(f"Total regular passengers served: {total_regular}")
-    print(f"Total travel time: {total_time} minutes")
-    if (total_emergency + total_regular) > 0:
-        avg_time = total_time / (total_emergency + total_regular)
-        print(f"Overall average journey time: {avg_time:.1f} minutes")
