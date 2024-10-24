@@ -102,10 +102,38 @@ class TrainControlSystem:
         self.stops_made = 0
         self.emergency_passengers_served = 0
         self.regular_passengers_served = 0
+        self.direction = 1  # 1 for forward, -1 for backward
 
     def get_next_station(self):
+        """Determines the next station based on current position, direction, and emergency situations"""
         current_index = stations.index(self.current_station)
-        return stations[(current_index + 1) % len(stations)]
+
+        # If there are emergency passengers, check if we need to stay or move
+        if not self.emergency_stack.is_empty():
+            emergency_passenger = self.emergency_stack.peek()
+            if emergency_passenger.start_station == self.current_station:
+                # Stay at current station to pick up emergency passenger
+                return self.current_station
+            else:
+                # Move towards the emergency passenger's station
+                emergency_station_index = stations.index(emergency_passenger.start_station)
+                if emergency_station_index > current_index:
+                    self.direction = 1
+                else:
+                    self.direction = -1
+
+        # Calculate next station based on direction
+        next_index = current_index + self.direction
+
+        # Check if we need to change direction
+        if next_index >= len(stations):
+            self.direction = -1
+            next_index = current_index - 1
+        elif next_index < 0:
+            self.direction = 1
+            next_index = current_index + 1
+
+        return stations[next_index]
 
     def generate_passenger(self, station):
         possible_destinations = [s for s in stations if s != station]
@@ -152,30 +180,50 @@ class TrainControlSystem:
                 remaining_passengers.append(passenger)
         self.active_passengers = remaining_passengers
 
-        # Process ONLY emergency passengers if any exist
-        if not self.emergency_stack.is_empty():
-            self._handle_emergency_passengers()
-        else:
-            # Only process regular passengers if no emergencies
+        # Process emergency passengers first
+        self._handle_emergency_passengers()
+
+        # Only process regular passengers if train capacity allows
+        if len(self.active_passengers) < MAX_TRAIN_CAPACITY:
             self._handle_regular_passengers()
 
     def _handle_emergency_passengers(self):
+        # Keep track of emergency passengers to process
+        emergency_passengers = []
         while not self.emergency_stack.is_empty():
-            passenger = self.emergency_stack.pop()
+            emergency_passengers.append(self.emergency_stack.pop())
+
+        # Process emergency passengers and put unprocessed ones back on stack
+        for passenger in reversed(emergency_passengers):
             if passenger.start_station == self.current_station and not passenger.boarded:
-                passenger.boarded = True
-                passenger.board_time = self.current_time
-                self.active_passengers.append(passenger)
-                print(f"↑ {passenger} boarded")
+                if len(self.active_passengers) < MAX_TRAIN_CAPACITY:
+                    passenger.boarded = True
+                    passenger.board_time = self.current_time
+                    self.active_passengers.append(passenger)
+                    print(f"↑ {passenger} boarded")
+                else:
+                    self.emergency_stack.push(passenger)
+            else:
+                self.emergency_stack.push(passenger)
 
     def _handle_regular_passengers(self):
+        processed_passengers = []
         while not self.normal_passenger_queue.is_empty():
             passenger = self.normal_passenger_queue.pop()
             if passenger.start_station == self.current_station and not passenger.boarded:
-                passenger.boarded = True
-                passenger.board_time = self.current_time
-                self.active_passengers.append(passenger)
-                print(f"↑ {passenger} boarded")
+                if len(self.active_passengers) < MAX_TRAIN_CAPACITY:
+                    passenger.boarded = True
+                    passenger.board_time = self.current_time
+                    self.active_passengers.append(passenger)
+                    print(f"↑ {passenger} boarded")
+                else:
+                    processed_passengers.append(passenger)
+            else:
+                processed_passengers.append(passenger)
+
+        # Put unprocessed passengers back in queue
+        for passenger in processed_passengers:
+            self.normal_passenger_queue.add_in_priority_order(passenger)
 
     def move_train(self):
         if self.stops_made >= 20:
@@ -187,10 +235,13 @@ class TrainControlSystem:
         self.stops_made += 1
 
         print(
-            f"\n=== Stop {self.stops_made}/20: {self.current_station} → {new_station} (Time: {self.current_time}) ===")
+            f"\n=== Stop {self.stops_made}/20: {self.current_station} → {new_station} "
+            f"(Time: {self.current_time}, Direction: {'Forward' if self.direction == 1 else 'Backward'}) ===")
 
+        # Print emergency status if applicable
         if not self.emergency_stack.is_empty():
-            print("❗ Emergency passengers waiting - prioritizing emergency stack")
+            emergency_passenger = self.emergency_stack.peek()
+            print(f"❗ Emergency passenger waiting at Station {emergency_passenger.start_station}")
 
         self.current_station = new_station
 
@@ -264,6 +315,7 @@ class TrainControlSystem:
 # Constants
 stations = ['A', 'B', 'C', 'D']
 station_time = 10  # minutes between stations
+MAX_TRAIN_CAPACITY = 5000  # maximum number of passengers the train can hold
 
 # Run simulation
 if __name__ == "__main__":
