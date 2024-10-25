@@ -1,327 +1,225 @@
+# Aided using ChatGPT 4o
+
+import heapq
 import random
+from dataclasses import dataclass
+from typing import List, Optional
 
 
-class Node:
-    def __init__(self, data=None):
-        self.data = data
-        self.next = None
-
-
-class Stack:
-    def __init__(self):
-        self.top = None
-
-    def push(self, passenger):
-        new_node = Node(passenger)
-        new_node.next = self.top
-        self.top = new_node
-
-    def pop(self):
-        if self.top:
-            top_passenger = self.top.data
-            self.top = self.top.next
-            return top_passenger
-        return None
-
-    def is_empty(self):
-        return self.top is None
-
-    def peek(self):
-        return self.top.data if self.top else None
-
-
-class LinkedList:
-    def __init__(self):
-        self.head = None
-
-    def add_in_priority_order(self, passenger):
-        new_node = Node(passenger)
-        # Emergency passengers always go to emergency stack, so this is only for regular passengers
-        if not self.head:
-            self.head = new_node
-            return
-
-        # If new passenger should be first
-        if self.head.data.calculate_distance() > passenger.calculate_distance():
-            new_node.next = self.head
-            self.head = new_node
-            return
-
-        # Find position for new passenger
-        current = self.head
-        while current.next and current.next.data.calculate_distance() <= passenger.calculate_distance():
-            current = current.next
-        new_node.next = current.next
-        current.next = new_node
-
-    def pop(self):
-        if self.head:
-            top_passenger = self.head.data
-            self.head = self.head.next
-            return top_passenger
-        return None
-
-    def is_empty(self):
-        return self.head is None
-
-
+@dataclass
 class Passenger:
-    def __init__(self, id, start_station, destination_station, request_time, is_emergency=False):
-        self.id = id
-        self.start_station = start_station
-        self.destination_station = destination_station
-        self.request_time = request_time
-        self.is_emergency = is_emergency
-        self.boarded = False
-        self.board_time = None
-        self.total_time_on_train = 0
-        self.completed = False
+    start_station: str
+    destination_station: str
+    arrival_time: int
+    is_emergency: bool = False
+    is_on_train: bool = False
+    total_time: int = 0
+    passenger_id: int = 0
 
-    def calculate_distance(self):
-        """Calculate the distance between start and destination stations"""
-        start_index = stations.index(self.start_station)
-        dest_index = stations.index(self.destination_station)
-        distance = abs(start_index - dest_index)
-        return distance if not self.is_emergency else 0
+    def calculate_priority(self) -> int:
+        """Calculate passenger priority based on the distance to destination."""
+        return abs(ord(self.destination_station) - ord(self.start_station))
 
-    def __str__(self):
-        status = "🚨 Emergency" if self.is_emergency else "Regular"
-        return f"{status} Passenger {self.id}: {self.start_station} → {self.destination_station}"
+    def calculate_journey_time(self, minutes_per_station: int, stations: List[str]) -> int:
+        """Calculate the journey time based on stations between start and destination."""
+        start_idx = stations.index(self.start_station)
+        dest_idx = stations.index(self.destination_station)
+        stations_traveled = abs(dest_idx - start_idx)
+        return stations_traveled * minutes_per_station
 
 
-class TrainControlSystem:
+class EmergencyStack:
     def __init__(self):
-        self.normal_passenger_queue = LinkedList()
-        self.emergency_stack = Stack()
+        self.stack = []
+
+    def push(self, passenger: Passenger):
+        self.stack.append(passenger)
+
+    def pop(self) -> Optional[Passenger]:
+        return self.stack.pop() if self.stack else None
+
+    def peek(self) -> Optional[Passenger]:
+        return self.stack[-1] if self.stack else None
+
+    def is_empty(self) -> bool:
+        return len(self.stack) == 0
+
+
+class TrainSystem:
+    def __init__(self):
+        self.emergency_stack = EmergencyStack()
+        self.regular_passengers = []
         self.current_station = 'A'
+        self.direction = 1
         self.current_time = 0
-        self.active_passengers = []
+        self.stations = ['A', 'B', 'C', 'D']
         self.completed_passengers = []
-        self.passenger_id_counter = 0
-        self.total_passengers_generated = 0
-        self.stops_made = 0
-        self.emergency_passengers_served = 0
-        self.regular_passengers_served = 0
-        self.direction = 1  # 1 for forward, -1 for backward
+        self.minutes_per_station = 10
+        self.passenger_counter = 0
 
-    def get_next_station(self):
-        """Determines the next station based on current position, direction, and emergency situations"""
-        current_index = stations.index(self.current_station)
+    def determine_next_station(self) -> str:
+        """Determine the next station the train will go to, prioritizing emergencies."""
+        current_idx = self.stations.index(self.current_station)
 
-        # If there are emergency passengers, check if we need to stay or move
+        # Prioritize emergency passengers
         if not self.emergency_stack.is_empty():
             emergency_passenger = self.emergency_stack.peek()
-            if emergency_passenger.start_station == self.current_station:
-                # Stay at current station to pick up emergency passenger
-                return self.current_station
-            else:
-                # Move towards the emergency passenger's station
-                emergency_station_index = stations.index(emergency_passenger.start_station)
-                if emergency_station_index > current_index:
-                    self.direction = 1
-                else:
-                    self.direction = -1
+            emergency_idx = self.stations.index(emergency_passenger.destination_station)
+            if emergency_idx > current_idx:
+                return self.stations[current_idx + 1]
+            elif emergency_idx < current_idx:
+                return self.stations[current_idx - 1]
 
-        # Calculate next station based on direction
-        next_index = current_index + self.direction
+        # If no emergency passengers, check regular passengers
+        if self.regular_passengers:
+            passengers = [p for _, _, p in self.regular_passengers]
+            destinations = [p.destination_station for p in passengers]
 
-        # Check if we need to change direction
-        if next_index >= len(stations):
-            self.direction = -1
-            next_index = current_index - 1
-        elif next_index < 0:
-            self.direction = 1
-            next_index = current_index + 1
+            forward_count = sum(1 for dest in destinations if self.stations.index(dest) > current_idx)
+            backward_count = sum(1 for dest in destinations if self.stations.index(dest) < current_idx)
 
-        return stations[next_index]
+            if forward_count >= backward_count and current_idx < len(self.stations) - 1:
+                return self.stations[current_idx + 1]
+            elif backward_count > forward_count and current_idx > 0:
+                return self.stations[current_idx - 1]
 
-    def generate_passenger(self, station):
-        possible_destinations = [s for s in stations if s != station]
-        if not possible_destinations:
-            return None
+        # Default behavior if no passengers or equal distance
+        next_idx = current_idx + self.direction
+        if next_idx >= len(self.stations) or next_idx < 0:
+            self.direction *= -1
+            next_idx = current_idx + self.direction
+        return self.stations[next_idx]
 
-        destination = random.choice(possible_destinations)
-        is_emergency = random.random() < 0.2  # 20% chance of emergency
+    def generate_random_passengers(self) -> List[Passenger]:
+        """Generate a random number of passengers at the current station."""
+        num_passengers = random.randint(0, 2)
+        new_passengers = []
 
-        self.passenger_id_counter += 1
-        new_passenger = Passenger(
-            id=self.passenger_id_counter,
-            start_station=station,
-            destination_station=destination,
-            request_time=self.current_time,
-            is_emergency=is_emergency
-        )
-
-        if is_emergency:
-            self.emergency_stack.push(new_passenger)
-            print(f"Generated: {new_passenger}")
-        else:
-            self.normal_passenger_queue.add_in_priority_order(new_passenger)
-            print(f"Generated: {new_passenger}")
-
-        self.total_passengers_generated += 1
-        return new_passenger
-
-    def process_passengers(self):
-        # First handle passengers reaching their destination
-        remaining_passengers = []
-        for passenger in self.active_passengers:
-            if passenger.destination_station == self.current_station:
-                passenger.completed = True
-                travel_time = self.current_time - passenger.board_time
-                passenger.total_time_on_train = travel_time
-                self.completed_passengers.append(passenger)
-                if passenger.is_emergency:
-                    self.emergency_passengers_served += 1
-                else:
-                    self.regular_passengers_served += 1
-                print(f"✓ {passenger} completed journey in {travel_time} minutes")
-            else:
-                remaining_passengers.append(passenger)
-        self.active_passengers = remaining_passengers
-
-        # Process emergency passengers first
-        self._handle_emergency_passengers()
-
-        # Only process regular passengers if train capacity allows
-        if len(self.active_passengers) < MAX_TRAIN_CAPACITY:
-            self._handle_regular_passengers()
-
-    def _handle_emergency_passengers(self):
-        # Keep track of emergency passengers to process
-        emergency_passengers = []
-        while not self.emergency_stack.is_empty():
-            emergency_passengers.append(self.emergency_stack.pop())
-
-        # Process emergency passengers and put unprocessed ones back on stack
-        for passenger in reversed(emergency_passengers):
-            if passenger.start_station == self.current_station and not passenger.boarded:
-                if len(self.active_passengers) < MAX_TRAIN_CAPACITY:
-                    passenger.boarded = True
-                    passenger.board_time = self.current_time
-                    self.active_passengers.append(passenger)
-                    print(f"↑ {passenger} boarded")
-                else:
-                    self.emergency_stack.push(passenger)
-            else:
-                self.emergency_stack.push(passenger)
-
-    def _handle_regular_passengers(self):
-        processed_passengers = []
-        while not self.normal_passenger_queue.is_empty():
-            passenger = self.normal_passenger_queue.pop()
-            if passenger.start_station == self.current_station and not passenger.boarded:
-                if len(self.active_passengers) < MAX_TRAIN_CAPACITY:
-                    passenger.boarded = True
-                    passenger.board_time = self.current_time
-                    self.active_passengers.append(passenger)
-                    print(f"↑ {passenger} boarded")
-                else:
-                    processed_passengers.append(passenger)
-            else:
-                processed_passengers.append(passenger)
-
-        # Put unprocessed passengers back in queue
-        for passenger in processed_passengers:
-            self.normal_passenger_queue.add_in_priority_order(passenger)
-
-    def move_train(self):
-        if self.stops_made >= 20:
-            return False
-
-        new_station = self.get_next_station()
-        travel_time = station_time
-        self.current_time += travel_time
-        self.stops_made += 1
-
-        print(
-            f"\n=== Stop {self.stops_made}/20: {self.current_station} → {new_station} "
-            f"(Time: {self.current_time}, Direction: {'Forward' if self.direction == 1 else 'Backward'}) ===")
-
-        # Print emergency status if applicable
-        if not self.emergency_stack.is_empty():
-            emergency_passenger = self.emergency_stack.peek()
-            print(f"❗ Emergency passenger waiting at Station {emergency_passenger.start_station}")
-
-        self.current_station = new_station
-
-        # Generate new passengers before processing
-        self.generate_passengers_at_station(new_station)
-        self.process_passengers()
-
-        # Print current train status
-        self._print_train_status()
-        return True
-
-    def generate_passengers_at_station(self, station):
-        num_passengers = random.randint(1, 3)
-        print(f"\nGenerating {num_passengers} passengers at Station {station}:")
         for _ in range(num_passengers):
-            self.generate_passenger(station)
+            self.passenger_counter += 1
+            possible_destinations = [s for s in self.stations if s != self.current_station]
+            destination = random.choice(possible_destinations)
+            is_emergency = random.random() < 0.1
 
-    def _print_train_status(self):
-        if self.active_passengers:
-            print("\nCurrent passengers on train:")
-            for passenger in self.active_passengers:
-                print(f"• {passenger}")
-        else:
-            print("\nTrain is empty")
+            passenger = Passenger(
+                start_station=self.current_station,
+                destination_station=destination,
+                arrival_time=self.current_time,  # This is when they arrive at the station
+                is_emergency=is_emergency,
+                passenger_id=self.passenger_counter
+            )
+
+            passenger_type = "Emergency" if is_emergency else "Regular"
+            print(f"\n{passenger_type} Passenger #{passenger.passenger_id} appears at Station {self.current_station}")
+            print(f"   Destination: Station {passenger.destination_station}")
+
+            if is_emergency:
+                self.emergency_stack.push(passenger)
+                print(f"   ⚡ Added to emergency stack")
+            else:
+                heapq.heappush(self.regular_passengers, (passenger.calculate_priority(), id(passenger), passenger))
+                print(f"   Added to regular queue")
+
+            new_passengers.append(passenger)
+
+        return new_passengers
+
+    def print_status(self):
+        """Print the current status of the train, including passengers onboard."""
+        print(f"\nTime: {self.current_time} minutes")
+        print(f"Current Station: {self.current_station}")
 
         if not self.emergency_stack.is_empty():
-            print("\nEmergency passengers waiting in stack:")
-            current = self.emergency_stack.top
-            while current:
-                print(f"! {current.data}")
-                current = current.next
+            print("\n⚡ Emergency Passengers on Train:")
+            for p in reversed(self.emergency_stack.stack):
+                print(f"   Passenger #{p.passenger_id} → Station {p.destination_station}")
 
-    def run_simulation(self, num_runs=10):
-        total_time_all_runs = 0
-        total_emergency_passengers = 0
-        total_regular_passengers = 0
+        if self.regular_passengers:
+            print("\nRegular Passengers on Train:")
+            for _, _, p in sorted(self.regular_passengers):
+                print(f"   Passenger #{p.passenger_id} → Station {p.destination_station}")
 
-        for run in range(num_runs):
-            print(f"\n{'=' * 20} Run {run + 1} {'=' * 20}")
-            self.__init__()
+        print("-" * 50)
 
-            # Generate passengers at the first station before the first stop
-            self.generate_passengers_at_station(self.current_station)
+    def simulate(self, num_stops: int = 20):
+        """Simulate the train system for a given number of stops."""
+        stops_made = 0
 
-            # Run for exactly 20 stops
-            while self.stops_made < 20:
-                if not self.move_train():
+        while stops_made < num_stops:
+            self.print_status()
+
+            # Handle emergency passengers first
+            while not self.emergency_stack.is_empty():
+                emergency_passenger = self.emergency_stack.peek()
+                if emergency_passenger.destination_station == self.current_station:
+                    completed_passenger = self.emergency_stack.pop()
+                    # Calculate total time as current time minus arrival time
+                    completed_passenger.total_time = self.current_time - completed_passenger.arrival_time
+                    self.completed_passengers.append(completed_passenger)
+                    print(f"\n🔴 Emergency Passenger #{completed_passenger.passenger_id} disembarks at Station {self.current_station}")
+                    print(f"   Total journey time: {completed_passenger.total_time} minutes")
+                else:
                     break
 
-            # Calculate statistics for this run
-            run_completed_passengers = len(self.completed_passengers)
-            run_total_time = sum(p.total_time_on_train for p in self.completed_passengers)
+            # Handle regular passengers
+            temp_queue = []
+            while self.regular_passengers:
+                priority, pid, passenger = heapq.heappop(self.regular_passengers)
+                if passenger.destination_station == self.current_station:
+                    # Calculate total time as current time minus arrival time
+                    passenger.total_time = self.current_time - passenger.arrival_time
+                    self.completed_passengers.append(passenger)
+                    print(f"\nRegular Passenger #{passenger.passenger_id} disembarks at Station {self.current_station}")
+                    print(f"   Total journey time: {passenger.total_time} minutes")
+                else:
+                    temp_queue.append((priority, pid, passenger))
 
-            print(f"\nRun {run + 1} Summary:")
-            print(f"Total stops made: {self.stops_made}")
-            print(f"Emergency passengers served: {self.emergency_passengers_served}")
-            print(f"Regular passengers served: {self.regular_passengers_served}")
-            print(f"Total passengers completed: {run_completed_passengers}")
+            for item in temp_queue:
+                heapq.heappush(self.regular_passengers, item)
 
-            if run_completed_passengers > 0:
-                avg_time = run_total_time / run_completed_passengers
-                print(f"Average journey time: {avg_time:.1f} minutes")
+            # Generate new passengers at current station
+            self.generate_random_passengers()
 
-            total_time_all_runs += run_total_time
-            total_emergency_passengers += self.emergency_passengers_served
-            total_regular_passengers += self.regular_passengers_served
+            # Move to next station
+            next_station = self.determine_next_station()
+            if next_station != self.current_station:
+                print(f"\nTrain moving from Station {self.current_station} to Station {next_station}")
+                self.current_station = next_station
+                self.current_time += self.minutes_per_station
 
-        return total_time_all_runs, total_emergency_passengers, total_regular_passengers
+            stops_made += 1
 
+        print("\n🏁 Simulation complete!")
+        print(self.calculate_statistics())
 
-# Constants
-stations = ['A', 'B', 'C', 'D']
-station_time = 10  # minutes between stations
-MAX_TRAIN_CAPACITY = 5000  # maximum number of passengers the train can hold
+    def calculate_statistics(self):
+        """Calculate and return statistics on the journey times of passengers."""
+        if not self.completed_passengers:
+            return "No passengers completed their journey"
+
+        total_time = sum(p.total_time for p in self.completed_passengers)
+        avg_time = total_time / len(self.completed_passengers)
+        emergency_passengers = [p for p in self.completed_passengers if p.is_emergency]
+        regular_passengers = [p for p in self.completed_passengers if not p.is_emergency]
+
+        stats = f"\n📊 Final Statistics:\n"
+        stats += f"Total passengers served: {len(self.completed_passengers)}\n"
+        stats += f"Average journey time: {avg_time:.1f} minutes\n"
+        stats += f"Emergency passengers: {len(emergency_passengers)}\n"
+        stats += f"Regular passengers: {len(regular_passengers)}\n"
+
+        if emergency_passengers:
+            avg_emergency_time = sum(p.total_time for p in emergency_passengers) / len(emergency_passengers)
+            stats += f"Average emergency journey time: {avg_emergency_time:.1f} minutes\n"
+
+        if regular_passengers:
+            avg_regular_time = sum(p.total_time for p in regular_passengers) / len(regular_passengers)
+            stats += f"Average regular journey time: {avg_regular_time:.1f} minutes\n"
+
+        return stats
+
 
 # Run simulation
 if __name__ == "__main__":
-    system = TrainControlSystem()
-    total_time, total_emergency, total_regular = system.run_simulation(num_runs=10)
-    print("\n=== Overall Simulation Results ===")
-    print(f"Total time for all runs: {total_time} minutes")
-    print(f"Total emergency passengers served: {total_emergency}")
-    print(f"Total regular passengers served: {total_regular}")
+    train_system = TrainSystem()
+    train_system.simulate(20)
